@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WatchAnimeWorld Proxy — Console</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0f10;
+    --panel:#15181a;
+    --panel-2:#1c2023;
+    --line:#272c2f;
+    --accent:#7dffb3;
+    --accent-dim:#3f8f66;
+    --text:#e7ece9;
+    --text-dim:#8c9793;
+  }
+  body{ background:var(--bg); color:var(--text); font-family:'Space Grotesk',sans-serif; }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+  .panel{ background:var(--panel); border:1px solid var(--line); }
+  .scanline{
+    background: repeating-linear-gradient(0deg, rgba(125,255,179,0.035) 0px, rgba(125,255,179,0.035) 1px, transparent 1px, transparent 3px);
+  }
+  .pulse-dot{ animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+  .card-img{ aspect-ratio:2/3; object-fit:cover; background:var(--panel-2); }
+  .btn{ transition: transform .12s ease, background-color .12s ease; }
+  .btn:active{ transform: scale(0.97); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="scanline min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-[var(--line)] px-6 py-5 flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <p class="mono text-xs tracking-wide text-[var(--text-dim)]">SCRAPER PROXY / v1</p>
+      <h1 class="text-2xl font-semibold mt-0.5">WatchAnimeWorld <span class="text-[var(--accent)]">Console</span></h1>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-[var(--text-dim)]"></span>
+      <span id="statusText" class="mono text-sm text-[var(--text-dim)]">not checked</span>
+      <button id="pingBtn" class="btn mono text-sm px-4 py-2 rounded-md border border-[var(--line)] hover:border-[var(--accent-dim)] hover:text-[var(--accent)]">
+        ping /
+      </button>
+    </div>
+  </header>
+
+  <main class="px-6 py-6 max-w-6xl mx-auto space-y-6">
+
+    <!-- Base URL + latency -->
+    <section class="panel rounded-lg p-4 flex flex-wrap gap-3 items-center">
+      <label class="mono text-xs text-[var(--text-dim)] shrink-0">API BASE</label>
+      <input id="baseUrl" type="text" value="" placeholder="https://your-deployment.vercel.app"
+        class="mono flex-1 min-w-[240px] bg-[var(--panel-2)] border border-[var(--line)] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent-dim)]" />
+      <div class="mono text-xs text-[var(--text-dim)] whitespace-nowrap">
+        latency: <span id="latency" class="text-[var(--accent)]">—</span> ms
+      </div>
+    </section>
+
+    <!-- Search -->
+    <section class="panel rounded-lg p-4">
+      <div class="flex flex-wrap gap-3">
+        <input id="searchInput" type="text" placeholder="Search anime (leave empty for trending)…"
+          class="flex-1 min-w-[220px] bg-[var(--panel-2)] border border-[var(--line)] rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-[var(--accent-dim)]" />
+        <button id="searchBtn" class="btn mono text-sm px-5 py-2.5 rounded-md bg-[var(--accent)] text-[#0d0f10] font-medium hover:opacity-90">
+          fetch
+        </button>
+        <button id="rawToggleBtn" class="btn mono text-sm px-4 py-2.5 rounded-md border border-[var(--line)] hover:border-[var(--accent-dim)]">
+          raw json
+        </button>
+      </div>
+      <p id="resultMeta" class="mono text-xs text-[var(--text-dim)] mt-3"></p>
+    </section>
+
+    <!-- Raw JSON viewer -->
+    <section id="rawPanel" class="hidden panel rounded-lg p-4">
+      <pre id="rawJson" class="mono text-xs text-[var(--accent)] overflow-x-auto whitespace-pre-wrap leading-relaxed"></pre>
+    </section>
+
+    <!-- Results grid -->
+    <section id="resultsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></section>
+
+    <!-- Detail modal -->
+    <div id="detailModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="panel rounded-lg max-w-2xl w-full max-h-[85vh] overflow-y-auto p-5 relative">
+        <button id="closeModal" class="absolute top-3 right-3 mono text-xs text-[var(--text-dim)] hover:text-[var(--accent)]">close ✕</button>
+        <div id="detailContent" class="mono text-sm text-[var(--text-dim)]">Loading…</div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="px-6 py-8 text-center mono text-xs text-[var(--text-dim)]">
+    read-only proxy for personal use · not affiliated with watchanimeworld.one
+  </footer>
+
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // Default to same-origin if this file is served from the deployment itself
+  $('baseUrl').value = window.location.origin.startsWith('http') && !window.location.origin.includes('null')
+    ? window.location.origin
+    : '';
+
+  function getBase(){
+    let b = $('baseUrl').value.trim();
+    return b.replace(/\/+$/, '');
+  }
+
+  function setStatus(ok, text){
+    const dot = $('statusDot');
+    const label = $('statusText');
+    dot.className = 'w-2.5 h-2.5 rounded-full ' + (ok ? 'bg-[var(--accent)] pulse-dot' : 'bg-red-500');
+    label.textContent = text;
+  }
+
+  async function timedFetch(url){
+    const start = performance.now();
+    const res = await fetch(url);
+    const ms = Math.round(performance.now() - start);
+    $('latency').textContent = ms;
+    const data = await res.json();
+    return { res, data };
+  }
+
+  $('pingBtn').addEventListener('click', async () => {
+    const base = getBase();
+    if (!base) { setStatus(false, 'set API base first'); return; }
+    setStatus(false, 'checking…');
+    try {
+      const { res, data } = await timedFetch(base + '/');
+      setStatus(res.ok, data.status === 'online' ? 'online' : 'unexpected response');
+    } catch (e) {
+      setStatus(false, 'unreachable');
+    }
+  });
+
+  let rawVisible = false;
+  $('rawToggleBtn').addEventListener('click', () => {
+    rawVisible = !rawVisible;
+    $('rawPanel').classList.toggle('hidden', !rawVisible);
+  });
+
+  function renderCards(items){
+    const grid = $('resultsGrid');
+    grid.innerHTML = '';
+    items.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'panel rounded-lg overflow-hidden cursor-pointer hover:border-[var(--accent-dim)] transition-colors group';
+      card.innerHTML = `
+        <div class="relative overflow-hidden">
+          <img class="card-img w-full group-hover:scale-105 transition-transform duration-300" src="${item.image || ''}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.style.opacity=0.15" />
+          ${item.status ? `<span class="absolute top-2 left-2 mono text-[10px] bg-[var(--accent)] text-[#0d0f10] px-2 py-0.5 rounded font-medium">${escapeHtml(item.status)}</span>` : ''}
+        </div>
+        <div class="p-2.5">
+          <p class="text-sm font-medium leading-snug line-clamp-2">${escapeHtml(item.title)}</p>
+        </div>
+      `;
+      card.addEventListener('click', () => openDetails(item.link));
+      grid.appendChild(card);
+    });
+  }
+
+  function escapeHtml(str){
+    if (!str) return '';
+    return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  async function runSearch(){
+    const base = getBase();
+    if (!base) { $('resultMeta').textContent = 'set API base first'; return; }
+    const q = $('searchInput').value.trim();
+    const url = base + '/api/anime' + (q ? ('?search=' + encodeURIComponent(q)) : '');
+    $('resultMeta').textContent = 'fetching…';
+    try {
+      const { data } = await timedFetch(url);
+      $('rawJson').textContent = JSON.stringify(data, null, 2);
+      if (data.error) {
+        $('resultMeta').textContent = 'error: ' + data.error;
+        $('resultsGrid').innerHTML = '';
+        return;
+      }
+      $('resultMeta').textContent = `${data.count} result(s) · cached: ${data.cached}`;
+      renderCards(data.results || []);
+    } catch (e) {
+      $('resultMeta').textContent = 'request failed — check API base / CORS';
+    }
+  }
+
+  $('searchBtn').addEventListener('click', runSearch);
+  $('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
+
+  async function openDetails(link){
+    const base = getBase();
+    $('detailModal').classList.remove('hidden');
+    $('detailContent').innerHTML = 'Loading…';
+    try {
+      const url = base + '/api/details?url=' + encodeURIComponent(link);
+      const { data } = await timedFetch(url);
+      if (data.error) {
+        $('detailContent').innerHTML = `<p class="text-red-400">${escapeHtml(data.error)}</p>`;
+        return;
+      }
+      const epList = (data.episodes || []).slice(0, 30).map(ep =>
+        `<li class="truncate">• ${escapeHtml(ep.title)} ${ep.number ? '('+escapeHtml(ep.number)+')' : ''}</li>`
+      ).join('');
+      $('detailContent').innerHTML = `
+        <h2 class="text-lg font-semibold text-[var(--text)] mb-2">${escapeHtml(data.title)}</h2>
+        <p class="mb-3 leading-relaxed">${escapeHtml(data.synopsis) || 'No synopsis found.'}</p>
+        ${data.player_url ? `<p class="mb-2 text-[var(--accent)] break-all">player: ${escapeHtml(data.player_url)}</p>` : ''}
+        ${epList ? `<p class="text-[var(--text)] mt-3 mb-1">Episodes (${data.episodes.length}):</p><ul class="space-y-1 max-h-48 overflow-y-auto">${epList}</ul>` : ''}
+      `;
+    } catch (e) {
+      $('detailContent').innerHTML = '<p class="text-red-400">Failed to load details.</p>';
+    }
+  }
+
+  $('closeModal').addEventListener('click', () => $('detailModal').classList.add('hidden'));
+  $('detailModal').addEventListener('click', (e) => { if (e.target.id === 'detailModal') $('detailModal').classList.add('hidden'); });
+</script>
+
+</body>
+</html>
